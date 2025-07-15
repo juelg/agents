@@ -1,0 +1,14 @@
+*.egg*
+__pycache__
+.ruff_cache
+.mypy_cache
+.env
+build
+*.egg-info
+*.log
+results.json
+MUJOCO_LOG.TXT
+wandb
+run_logs
+.ipynb_checkpoints
+.not*

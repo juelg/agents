@@ -1,0 +1,109 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agents"
+version = "0.0.1"
+description = "Deploy foundation models to GPU servers."
+dependencies = [
+  "rpyc",
+  "numpy",
+  "json_numpy",
+  "gymnasium",
+  "typer",
+  "simple-slurm",
+  "wandb",
+  "pillow",
+  "tqdm",
+]
+readme = "README.md"
+maintainers = [{ name = "Tobias Jülg", email = "tobias.juelg@utn.de" }]
+authors = [{ name = "Tobias Jülg", email = "tobias.juelg@utn.de" }]
+requires-python = ">=3.10"
+license       = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+
+
+[project.optional-dependencies]
+dev = [
+  "ruff",
+  "black",
+  "isort",
+  "mypy",
+  "types-requests",
+  "pybind11-stubgen",
+  "build",
+  "pytest",
+  "commitizen",
+]
+
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+extend-select = [
+  "B", # flake8-bugbear
+  # "I",           # isort
+  "ARG", # flake8-unused-arguments
+  "C4",  # flake8-comprehensions
+  "EM",  # flake8-errmsg
+  "ICN", # flake8-import-conventions
+  "G",   # flake8-logging-format
+  "PGH", # pygrep-hooks
+  "PIE", # flake8-pie
+  "PL",  # pylint
+  "PT",  # flake8-pytest-style
+  #   "PTH",         # flake8-use-pathlib
+  "RET", # flake8-return
+  "RUF", # Ruff-specific
+  "SIM", # flake8-simplify
+  "T20", # flake8-print
+  #   "UP",          # pyupgrade
+  "YTT", # flake8-2020
+  "EXE", # flake8-executable
+  "NPY", # NumPy specific rules
+  "PD",  # pandas-vet
+]
+ignore = [
+  "PLR09",   # Too many X
+  "PLR2004", # Magic comparison
+  "E741",    # ambiguous variable name
+  "ICN001",  #  `numpy` should be imported as `np`
+  "PGH003",  # Use specfic rule code when ignoring types issues
+  # "RET504",
+  "T201", # print() used
+]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.messages_control]
+disable = [
+  "C",
+  "R",
+  "fixme",
+  "logging-fstring-interpolation",
+  "unspecified-encoding",
+  "broad-exception-raised",
+  "broad-exception-caught",
+]
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+ignore_missing_imports = true
+check_untyped_defs = true
+pretty = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-vv"
+testpaths = ["tests"]
