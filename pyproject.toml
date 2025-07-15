@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agents"
 version = "0.0.1"
-description = "Deploy foundation models to GPU servers."
+description = "Modular VLA and Environment interfaces."
 dependencies = [
   "rpyc",
   "numpy",
@@ -31,8 +31,6 @@ dev = [
   "black",
   "isort",
   "mypy",
-  "types-requests",
-  "pybind11-stubgen",
   "build",
   "pytest",
   "commitizen",
