@@ -52,7 +52,7 @@ print(xla_bridge.get_backend().platform)
 
 Install Octo and dependencies:
 ```shell
-pip install -r rpd/utils/fixed_octo_requirements.txt
+pip install -r agents/utils/fixed_octo_requirements.txt
 pip install git+https://github.com/octo-models/octo.git
 ```
 
