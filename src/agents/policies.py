@@ -364,11 +364,12 @@ class OctoActionDistribution(OctoModel):
         """
         import jax
         import jax.numpy as jnp
+        self._from_shared_memory(obs)
 
         batch_size = obs.cameras["rgb_side"].shape[0]
         assert obs.cameras["rgb_side"].shape == (batch_size, 256, 256, 3), "wrong shape"
         assert self.instruction is not None, "forgot reset?"
-        num_samples = obs.info.get("num_samples", 10)
+        num_samples = obs.info.get("num_samples", 1)
 
         x = jnp.array(obs.cameras["rgb_side"])  # BATCH, H, W, 3
         # x_expanded = x[:, None, :, :, :]
@@ -406,6 +407,7 @@ class OpenVLADistribution(OpenVLAModel):
     def act(self, obs: Obs) -> Act:
         # no batch dimension here
         import torch
+        self._from_shared_memory(obs)
 
         assert self.instruction is not None, "forgot reset?"
         self.step += 1
@@ -415,7 +417,7 @@ class OpenVLADistribution(OpenVLAModel):
         images = obs.cameras["rgb_side"]
         actions = []
         unnorm_key = self.unnorm_key
-        num_samples = obs.info.get("num_samples", 10)
+        num_samples = obs.info.get("num_samples", 1)
 
         # time it
         import time
