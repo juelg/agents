@@ -249,7 +249,7 @@ class OctoModel(Agent):
         logging.info(f"horizon: {self.horizon}")
         logging.info(f"unnorm_key: {self.unnorm_key}")
         logging.info(f"kwargs: {kwargs}")
-        if self.checkpoint_step is None or self.checkpoint_path is None:
+        if self.checkpoint_path is None:
             self.octo_path = self.default_checkpoint_path
             logging.info(f"Using default checkpoint path: {self.octo_path}")
             if self.checkpoint_step is not None:
@@ -364,6 +364,7 @@ class OctoActionDistribution(OctoModel):
         """
         import jax
         import jax.numpy as jnp
+
         self._from_shared_memory(obs)
 
         batch_size = obs.cameras["rgb_side"].shape[0]
@@ -407,6 +408,7 @@ class OpenVLADistribution(OpenVLAModel):
     def act(self, obs: Obs) -> Act:
         # no batch dimension here
         import torch
+
         self._from_shared_memory(obs)
 
         assert self.instruction is not None, "forgot reset?"
