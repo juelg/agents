@@ -59,6 +59,50 @@ class EvaluatorEnv(ABC):
         raise NotImplementedError
 
 
+class RCSPickUpCubeEval(EvaluatorEnv):
+    INSTRUCTIONS = {
+        "rcs/FR3SimplePickUpSim-v0": "pick up the red cube",
+    }
+
+    def translate_obs(self, obs: dict[str, Any]) -> Obs:
+        # does not include history
+
+        side = obs["frames"]["side"]["rgb"]["data"]
+        # depth_side = obs["frames"]["side"]["depth"]["data"],
+        return Obs(
+            cameras=dict(rgb_side=side),
+            gripper=obs["gripper"],
+        )
+
+    def step(self, action: Act) -> tuple[Obs, float, bool, bool, dict]:
+        # includes horizon
+        if action.action.shape[0] != 7:
+            obs, reward, success, truncated, info = self.env.step(
+                {"xyzrpy": action.action[0][:6], "gripper": action.action[0][6]}
+            )
+        else:
+            obs, reward, success, truncated, info = self.env.step(
+                {"xyzrpy": action.action[:6], "gripper": action.action[6]}
+            )
+        # print(action.action, obs["xyzrpy"], obs["gripper"])
+        return self.translate_obs(obs), reward, success, truncated, info
+
+    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[Obs, dict[str, Any]]:
+        obs, info = self.env.reset(seed=seed, options=options)
+        return self.translate_obs(obs), info
+
+    @property
+    def language_instruction(self) -> str:
+        return self.INSTRUCTIONS[self.env_id]
+
+    @staticmethod
+    def do_import():
+        import rcs
+
+
+EvaluatorEnv.register("rcs/FR3SimplePickUpSim-v0", RCSPickUpCubeEval)
+
+
 class ManiSkill(EvaluatorEnv):
     INSTRUCTIONS = {
         "LiftPegUpright-v1": "lift the peg upright",
