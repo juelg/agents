@@ -1,5 +1,5 @@
 # Agents
-Agents is a python library that allows to septate next action prediction from policy networks from action execution in simulated or real environments.
+Agents is a python library that allows to separate next action prediction from policy networks from action execution in simulated or real environments.
 It defines an interface for policies and for environments.
 The policies run independent in their own virtual environment, potentially on a different computer, and can be queried for an action (in principle similar to the chatgpt api).
 

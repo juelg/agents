@@ -107,7 +107,7 @@ class ManiSkill(EvaluatorEnv):
     def translate_obs(self, obs: dict[str, Any]) -> Obs:
         # does not include history
         return Obs(
-            rgb_side=obs["sensor_data"]["base_camera"]["rgb"].squeeze(0).numpy(),
+            cameras=dict(rgb_side=obs["sensor_data"]["base_camera"]["rgb"].squeeze(0).numpy()),
             # gripper=float(not obs["extra"]["is_grasped"]),
         )
 

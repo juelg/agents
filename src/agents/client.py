@@ -86,7 +86,7 @@ class RemoteAgent(Agent):
 if __name__ == "__main__":
     # to test the connection
     agent = RemoteAgent("localhost", 8080, "test")
-    obs = Obs(rgb_side=np.zeros((256, 256, 3), dtype=np.uint8))
+    obs = Obs(cameras={"rgb_side": np.zeros((256, 256, 3), dtype=np.uint8)})
     instruction = "do something"
     agent.reset(obs, instruction)
     print(agent.act(obs))
