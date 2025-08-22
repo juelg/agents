@@ -8,28 +8,28 @@ from functools import partial, reduce
 from multiprocessing import resource_tracker, shared_memory
 from operator import getitem
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Union, Optional
 
 import numpy as np
 from PIL import Image
 
 
-@dataclass(kw_only=True)
+@dataclass
 class SharedMemoryPayload:
     shm_name: str
     shape: tuple[int, ...]
     dtype: str = "uint8"
 
 
-@dataclass(kw_only=True)
+@dataclass
 class Obs:
-    cameras: dict[str, np.ndarray | SharedMemoryPayload] = field(default_factory=dict)
-    gripper: float | None = None
+    cameras: dict[str, Union[np.ndarray, SharedMemoryPayload]] = field(default_factory=dict)
+    gripper: Optional[float] = None
     info: dict[str, Any] = field(default_factory=dict)
     camera_data_in_shared_memory: bool = False
 
 
-@dataclass(kw_only=True)
+@dataclass
 class Act:
     action: np.ndarray
     done: bool = False
@@ -38,7 +38,7 @@ class Act:
 
 class Agent:
     def __init__(
-        self, default_checkpoint_path: str, checkpoint_path: str | None = None, checkpoint_step: int | None = None
+        self, default_checkpoint_path: str, checkpoint_path: Optional[str] = None, checkpoint_step: Optional[int] = None
     ) -> None:
         self.instruction = None
         self.step = -1
@@ -231,7 +231,7 @@ class OctoModel(Agent):
     def __init__(
         self,
         horizon: int = 2,
-        unnorm_key: list[str] | None = None,
+        unnorm_key: Optional[list[str]] = None,
         default_checkpoint_path: str = "hf://rail-berkeley/octo-base-1.5",
         **kwargs,
     ) -> None:
@@ -450,6 +450,121 @@ class OpenVLADistribution(OpenVLAModel):
         stds = np.std(actions, axis=1).astype(np.float32)
         return Act(action=None, info={"means": means, "stds": stds, "actions": actions})
 
+class DiffusionPolicy(Agent):
+    """
+    Agent implementation for vanilla diffusion policy
+    """
+
+    def __init__(
+        self,
+        checkpoint_path: str = "/home/walter/Weights/latest.ckpt",
+        steps_per_inference: int = 3,
+        control_frequency_hz: int = 30,
+        **kwargs,
+    ) -> None:
+        super().__init__(default_checkpoint_path="", **kwargs)
+
+        self.checkpoint_path = checkpoint_path
+        self.steps_per_inference = steps_per_inference
+        self.control_frequency_hz = control_frequency_hz
+
+        self.step = self.steps_per_inference
+        self.last_action_time = None
+
+        # log checkpoint path and step and kwargs
+        logging.info(f"checkpoint_path: {self.checkpoint_path}")
+        logging.info(f"steps_per_inference: {self.steps_per_inference}")
+        logging.info(f"kwargs: {kwargs}")
+        if self.checkpoint_path is None:
+            logging.error(
+                "No checkpoint provided"
+            )
+        else:
+            logging.info(
+                f"Loading checkpoint {self.checkpoint_path}"
+            )
+
+    def initialize(self):
+        import sys
+        sys.path.insert(0, "/home/walter/Code/private-diffusion-policy-fork")
+        from diffusion_policy.utn.agent import UTNDiffusionPolicy
+
+        self.policy = UTNDiffusionPolicy(self.checkpoint_path)
+        self.policy.initialize()
+        self.obs_buffer = deque(maxlen=self.policy.cfg.n_obs_steps)
+
+    def act(self, obs: Obs) -> Act:
+        from datetime import datetime
+        from time import sleep
+        # from diffusion_policy.utn.arro import ARROSegmentation
+
+        # segmented_img = arro.segment(obs.rgb_side)
+
+        self.obs_buffer.append(obs.rgb_side)
+
+
+        if self.step >= self.steps_per_inference:
+            print("Computing new actions")
+            self.actions = self.policy.act(self.obs_buffer)
+            self.step = 0
+
+        print("Action: ", self.actions[self.step])
+
+        # Needs to be activated if robot is running in async mode
+        
+        # Ensure that actions are not issued faster than the specified frequency
+        # if self.last_action_time is not None:
+        #     time_diff = (datetime.now() - self.last_action_time).total_seconds()
+        #     sleep_time = 1/self.control_frequency_hz - time_diff
+        #     if sleep_time > 0:
+        #         sleep(sleep_time)                
+
+        self.step += 1
+        self.last_action_time = datetime.now()
+        return Act(action=self.actions[self.step])        
+
+    def reset(self, obs: Obs, instruction: Any):
+        super().reset(obs, instruction="")
+        image = obs.rgb_side
+        self.obs_buffer.clear()
+        self.policy.reset()
+        self.last_action_time = None
+        self.step = self.steps_per_inference
+        self.obs_buffer.extend([image] * self.policy.cfg.n_obs_steps)
+        return {}
+
+class ReplayPolicy(Agent):
+    def __init__(self,
+                 trajectory_path="/home/walter/Data/LowSize_clean_data_zarr"
+                 ):
+        super().__init__(default_checkpoint_path="")
+
+        self.trajectory_path=trajectory_path
+
+    def initialize(self):
+        pass
+    
+    def act(self, obs):
+        if self.step < self.episode_length:
+            action = self.replay_episode["action"][self.step]
+            self.step += 1
+            return Act(action=action)
+        else:
+            return Act(done=True)
+        
+    def reset(self, obs=None, instruction=None, **kwargs):
+        import sys
+        sys.path.insert(0, "/home/walter/Code/private-diffusion-policy-fork")
+        from diffusion_policy.common.replay_buffer import ReplayBuffer
+        super().reset(obs, instruction, **kwargs)
+
+        buffer = ReplayBuffer.create_from_path(self.trajectory_path)
+        self.episode_idx = int(instruction)
+        self.replay_episode = buffer.get_episode(self.episode_idx)
+        self.episode_length = self.replay_episode["action"].shape[0]
+
+        self.step = 0
+        return {}   
 
 AGENTS = dict(
     test=TestAgent,
@@ -457,4 +572,6 @@ AGENTS = dict(
     openvla=OpenVLAModel,
     octodist=OctoActionDistribution,
     openvladist=OpenVLADistribution,
+    diffusionpolicy=DiffusionPolicy,
+    replaypolicy=ReplayPolicy,
 )

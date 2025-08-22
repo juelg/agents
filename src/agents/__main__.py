@@ -4,7 +4,7 @@ import logging
 import os
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import numpy as np
 import rpyc
@@ -62,7 +62,7 @@ def start_server(
 
 
 def _per_process(
-    args: tuple[int, dict, list[EvalConfig], str, int, str, int, int | None, int],
+    args: tuple[int, dict, list[EvalConfig], str, int, str, int, Optional[int], int],
 ) -> tuple[np.ndarray, list[list[list[float]]], list[float], int]:
     step, kwargs, eval_cfgs, agent_name, port, host, episodes, n_processes, nth_gpu = args
     logging.info(f"Starting evaluation for step {step}")
@@ -87,13 +87,13 @@ def run_eval_post_training(
     wandb_note: Annotated[str, typer.Option(help="weights and biases logging note.")],
     wandb_name: Annotated[str, typer.Option(help="weights and biases logging name.")],
     output_path: Annotated[str, typer.Option(help="Path to store the run results.")],
-    wandb_group: Annotated[str | None, typer.Option(help="weights and biases logging name.")] = None,
-    steps: Annotated[str | None, typer.Option(help="steps to evaluate.")] = None,
+    wandb_group: Annotated[Optional[str], typer.Option(help="weights and biases logging name.")] = None,
+    steps: Annotated[Optional[str], typer.Option(help="steps to evaluate.")] = None,
     kwargs: Annotated[str, typer.Option(help="args to start the agent.")] = "{}",
     port: Annotated[int, typer.Option(help="Port to run the server on.")] = 8080,
     host: Annotated[str, typer.Option(help="Host to run the server on.")] = "localhost",
     episodes: Annotated[int, typer.Option(help="Number of episodes to run.")] = 100,
-    n_processes: Annotated[int | None, typer.Option(help="Number of processes to run.")] = None,
+    n_processes: Annotated[Optional[int], typer.Option(help="Number of processes to run.")] = None,
     n_gpus: Annotated[int, typer.Option(help="Number of gpus to run.")] = 1,
     eval_cfgs: Annotated[
         str, typer.Option(help="Evaluation configurations.")
@@ -251,10 +251,11 @@ def run_eval_during_training(
     port: Annotated[int, typer.Option(help="Port to run the server on.")] = 8080,
     host: Annotated[str, typer.Option(help="Host to run the server on.")] = "localhost",
     episodes: Annotated[int, typer.Option(help="Number of episodes to run.")] = 100,
-    n_processes: Annotated[int | None, typer.Option(help="Number of processes to run.")] = None,
+    n_processes: Annotated[Optional[int], typer.Option(help="Number of processes to run.")] = None,
     eval_cfgs: Annotated[
         str, typer.Option(help="Evaluation configurations.")
     ] = '[{"env": "rcs/SimplePickUpSim-v0", "kwargs": {}}]',
+    python_path: Annotated[str, typer.Option(help="Full path to the policy environment's python")] = "python",
 ):
     """
     during training eval, all need to use the same id
@@ -285,9 +286,9 @@ def run_eval_during_training(
 
     step = kwargs.get("checkpoint_step", 0)
     step = step if step is not None else 0
-
+    # Genius TODO
     per_env_results_last_reward, per_env_results_rewards = evaluation(
-        agent_name, kwargs, eval_cfgs, port, host, episodes, n_processes
+        agent_name, kwargs, eval_cfgs, port, host, episodes, n_processes, python=python_path
     )
 
     # return is [envs, episodes, 3(success, reward, steps)], [envs, episodes, rewards for all steps in the episode]

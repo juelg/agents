@@ -8,7 +8,7 @@ import subprocess
 from abc import ABC
 from dataclasses import asdict, dataclass
 from time import sleep
-from typing import Any
+from typing import Any, Optional
 
 import gymnasium as gym
 import numpy as np
@@ -39,7 +39,7 @@ class EvaluatorEnv(ABC):
     def step(self, action: Act) -> tuple[Obs, float, bool, bool, dict]:
         raise NotImplementedError
 
-    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[Obs, dict[str, Any]]:
+    def reset(self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None) -> tuple[Obs, dict[str, Any]]:
         raise NotImplementedError
 
     @property
@@ -58,20 +58,33 @@ class EvaluatorEnv(ABC):
     def do_import():
         raise NotImplementedError
 
-
+######################### Make a version of this with tacto
 class RCSPickUpCubeEval(EvaluatorEnv):
     INSTRUCTIONS = {
         "rcs/FR3SimplePickUpSim-v0": "pick up the red cube",
     }
-
+    rgb_keys = ['arro', 'wrist']
+    depth_keys = ['arro', 'wrist']
+    tacto_keys = ['left_tacto_pad', 'right_tacto_pad']
+    lowdim_keys = ['joints']
+    # Make a custom version of translate_obs to take in tacto data 
     def translate_obs(self, obs: dict[str, Any]) -> Obs:
         # does not include history
-
-        side = obs["frames"]["side"]["rgb"]["data"]
-        # depth_side = obs["frames"]["side"]["depth"]["data"],
+        cam_dict = {}
+        info_dict = {}
+        print(obs.keys())
+        for key in self.rgb_keys:
+            cam_dict["rgb_"+key] = obs["frames"][key]["rgb"]["data"]
+        for key in self.depth_keys:
+            cam_dict["depth_"+key] = obs["frames"][key]["depth"]["data"]
+        for key in self.tacto_keys:
+            cam_dict["tacto_"+key] = obs["tacto"][key]["rgb"]["data"]
+        for key in self.lowdim_keys:
+            info_dict[key] = obs[key]
         return Obs(
             cameras=dict(rgb_side=side),
             gripper=obs["gripper"],
+            info=info_dict
         )
 
     def step(self, action: Act) -> tuple[Obs, float, bool, bool, dict]:
@@ -87,7 +100,7 @@ class RCSPickUpCubeEval(EvaluatorEnv):
         # print(action.action, obs["xyzrpy"], obs["gripper"])
         return self.translate_obs(obs), reward, success, truncated, info
 
-    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[Obs, dict[str, Any]]:
+    def reset(self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None) -> tuple[Obs, dict[str, Any]]:
         obs, info = self.env.reset(seed=seed, options=options)
         return self.translate_obs(obs), info
 
@@ -168,7 +181,7 @@ class ManiSkill(EvaluatorEnv):
         obs, reward, success, truncated, info = self.env.step(a)
         return self.translate_obs(obs), reward, success, truncated, info
 
-    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[Obs, dict[str, Any]]:
+    def reset(self, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None) -> tuple[Obs, dict[str, Any]]:
         obs, info = self.env.reset(seed=seed, options=options)
         return self.translate_obs(obs), info
 
@@ -196,8 +209,8 @@ EvaluatorEnv.register("PokeCube-v1", ManiSkill)
 
 @dataclass
 class EvalConfig:
-    env_id: str
-    env_kwargs: dict[str, Any]
+    env_id: str # Genius TODO: EvaluatorEnv registered name, like "rcs/FR3SimplePickUpSim-v0"
+    env_kwargs: dict[str, Any] # Genius TODO: The arguments for the creator function, like SimTaskEnvCreator
     max_steps_per_episode: int = 100
 
 
@@ -361,16 +374,18 @@ def run_eval_during_training(
     wandb_project: str,
     wandb_note: str,
     wandb_name: str,
+    rcs_python_path: str,
+    policy_python_path: str,
     slurm: Slurm,
     output_path: str,
     wandb_first: bool = False,
     port=8080,
     host="localhost",
     episodes: int = 100,
-    n_processes: int | None = None,
+    n_processes: Optional[int] = None,
 ):
-    cmd = [
-        "python",
+    cmd = [ # prepend the environment path to the correct python with rcs installed 
+        f"{rcs_python_path}",
         "-m",
         "agents" "run-eval-during-training",
         agent_name,
@@ -387,10 +402,13 @@ def run_eval_during_training(
         f"--wandb-note={wandb_note}",
         f"--wandb-name={wandb_name}",
         f"--output-path={output_path}",
+        f"--python-path={policy_python_path}"
     ]
     if wandb_first:
         cmd.append("--wandb-first")
-    slurm.sbatch(shlex.join(cmd))
+    # use a subprocess tool from python to execute the command 
+    p = subprocess.Popen(cmd)
+    # slurm.sbatch(shlex.join(cmd)) 
 
 
 def run_eval_post_training(
@@ -404,11 +422,11 @@ def run_eval_post_training(
     checkpoint_steps: list[int],
     slurm: Slurm,
     output_path: str,
-    wandb_group: str | None = None,
+    wandb_group: Optional[str] = None,
     port=8080,
     host="localhost",
     episodes: int = 100,
-    n_processes: int | None = None,
+    n_processes: Optional[int] = None,
     video: bool = False,
     n_gpus: int = 1,
 ):
