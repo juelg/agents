@@ -15,7 +15,7 @@ import wandb
 # when started from jupyter notebook
 os.environ["MPLBACKEND"] = "Agg"
 
-from agents.evaluator_envs import EvalConfig, evaluation, write_results
+from agents.evaluator_envs import AgentConfig, EvalConfig, evaluation, write_results
 from agents.policies import AGENTS
 from agents.server import AgentService
 
@@ -62,15 +62,15 @@ def start_server(
 
 
 def _per_process(
-    args: tuple[int, dict, list[EvalConfig], str, int, str, int, Optional[int], int],
+    args: tuple[int, AgentConfig, list[EvalConfig], str, int, str, int, Optional[int], int],
 ) -> tuple[np.ndarray, list[list[list[float]]], list[float], int]:
-    step, kwargs, eval_cfgs, agent_name, port, host, episodes, n_processes, nth_gpu = args
+    step, _agent_cfg, eval_cfgs, episodes, n_processes, nth_gpu = args
     logging.info(f"Starting evaluation for step {step}")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(nth_gpu)
-    job_kwargs = copy.deepcopy(kwargs)
-    job_kwargs["checkpoint_step"] = step
+    agent_cfg = copy.deepcopy(_agent_cfg)
+    agent_cfg.agent_kwargs["checkpoint_step"] = step
     per_env_results_last_reward, per_env_results_rewards = evaluation(
-        agent_name, job_kwargs, eval_cfgs, port, host, episodes, n_processes
+        agent_cfg=agent_cfg, eval_cfgs=eval_cfgs, episodes=episodes, n_processes=n_processes
     )
     logging.info(f"Finished evaluation for step {step}")
     flatten_rewards = [[item for sublist in env_rewards for item in sublist] for env_rewards in per_env_results_rewards]
@@ -81,7 +81,6 @@ def _per_process(
 
 @main_app.command()
 def run_eval_post_training(
-    agent_name: Annotated[str, typer.Argument(help="Agent name to run.")],
     wandb_project: Annotated[str, typer.Option(help="weights and biases logging project.")],
     wandb_entity: Annotated[str, typer.Option(help="weights and biases logging entity.")],
     wandb_note: Annotated[str, typer.Option(help="weights and biases logging note.")],
@@ -89,15 +88,15 @@ def run_eval_post_training(
     output_path: Annotated[str, typer.Option(help="Path to store the run results.")],
     wandb_group: Annotated[Optional[str], typer.Option(help="weights and biases logging name.")] = None,
     steps: Annotated[Optional[str], typer.Option(help="steps to evaluate.")] = None,
-    kwargs: Annotated[str, typer.Option(help="args to start the agent.")] = "{}",
-    port: Annotated[int, typer.Option(help="Port to run the server on.")] = 8080,
-    host: Annotated[str, typer.Option(help="Host to run the server on.")] = "localhost",
     episodes: Annotated[int, typer.Option(help="Number of episodes to run.")] = 100,
     n_processes: Annotated[Optional[int], typer.Option(help="Number of processes to run.")] = None,
     n_gpus: Annotated[int, typer.Option(help="Number of gpus to run.")] = 1,
     eval_cfgs: Annotated[
         str, typer.Option(help="Evaluation configurations.")
     ] = '[{"env": "rcs/SimplePickUpSim-v0", "kwargs": {}}]',
+    agent_cfg: Annotated[
+        str, typer.Option(help="Agent configuration.")
+    ] = '{"host": "localhost", "port": 8080, "agent_name": "Test", "agent_kwargs": {}, "python_path": "python"}',
 ):
     """
     post training eval which goes over all checkpoints
@@ -115,7 +114,7 @@ def run_eval_post_training(
         entity=wandb_entity,
         resume="allow",
         project=wandb_project,
-        config=dict(agent_name=agent_name, agent_kwargs=json.loads(kwargs), eval_cfgs=json.loads(eval_cfgs)),
+        # config=dict(agent_name=agent_name, agent_kwargs=json.loads(kwargs), eval_cfgs=json.loads(eval_cfgs)),
         notes=wandb_note,
         job_type="eval",
         name=wandb_name,
@@ -196,11 +195,12 @@ def run_eval_post_training(
     gpus_ids = [i % n_gpus for i in range(len(steps))]
 
     # spawn n processes and run in parallel
+
+    agent_cfgs = [AgentConfig(**json.loads(agent_cfg)) for _ in range(steps)]
+    for idx in range(len(steps)):
+        agent_cfgs[idx].port += idx
     with Pool(n_processes) as p:
-        args = [
-            (step, kwargs, eval_cfgs, agent_name, port + idx, host, episodes, 1, gpus_ids[idx])
-            for idx, step in enumerate(steps)
-        ]
+        args = [(step, agent_cfgs[idx], eval_cfgs, episodes, 1, gpus_ids[idx]) for idx, step in enumerate(steps)]
         results = p.map(_per_process, args)
     logging.info("Finished evaluation")
 
@@ -230,7 +230,7 @@ def run_eval_post_training(
             per_env_results_last_reward,
             per_env_results_rewards,
             eval_cfgs,
-            model_cfg={"agent_name": agent_name, "kwargs": kwargs},
+            agent_cfg=agent_cfg,
             out=output_path,
         )
         wandb.log_artifact(path, type="file", name="results", aliases=[f"step_{step}"])
@@ -238,7 +238,6 @@ def run_eval_post_training(
 
 @main_app.command()
 def run_eval_during_training(
-    agent_name: Annotated[str, typer.Argument(help="Agent name to run.")],
     wandb_id: Annotated[str, typer.Option(help="weights and biases logging id.")],
     wandb_group: Annotated[str, typer.Option(help="weights and biases logging group.")],
     wandb_project: Annotated[str, typer.Option(help="weights and biases logging project.")],
@@ -248,19 +247,17 @@ def run_eval_during_training(
     output_path: Annotated[str, typer.Option(help="Path to store the run results.")],
     wandb_first: Annotated[bool, typer.Option(help="whether its the first eval.")] = False,
     wandb_step_metric: Annotated[str, typer.Option(help="weights and biases logging step metric.")] = "global_step",
-    kwargs: Annotated[str, typer.Option(help="args to start the agent.")] = "{}",
-    port: Annotated[int, typer.Option(help="Port to run the server on.")] = 8080,
-    host: Annotated[str, typer.Option(help="Host to run the server on.")] = "localhost",
     episodes: Annotated[int, typer.Option(help="Number of episodes to run.")] = 100,
     n_processes: Annotated[Optional[int], typer.Option(help="Number of processes to run.")] = None,
     eval_cfgs: Annotated[
         str, typer.Option(help="Evaluation configurations.")
     ] = '[{"env": "rcs/SimplePickUpSim-v0", "kwargs": {}}]',
-    python_path: Annotated[str, typer.Option(help="Full path to the policy environment's python")] = "python",
+    agent_cfg: Annotated[
+        str, typer.Option(help="Agent configuration.")
+    ] = '{"host": "localhost", "port": 8080, "agent_name": "Test", "agent_kwargs": {}, "python_path": "python"}',
 ):
     # First check if all the str arguments are actually valid...
     null_values = ["None", "null", "none", "null"]
-    agent_name = agent_name if (agent_name and (agent_name not in null_values)) else None
     wandb_name = wandb_name if (wandb_name and (wandb_name not in null_values)) else None
     wandb_id = wandb_id if (wandb_id and (wandb_id not in null_values)) else None
     wandb_group = wandb_group if (wandb_group and (wandb_group not in null_values)) else None
@@ -298,13 +295,13 @@ def run_eval_during_training(
     wandb.init(id=wandb_id, entity=wandb_entity, resume="must", project=wandb_project)
 
     eval_cfgs = [EvalConfig(**cfg) for cfg in json.loads(eval_cfgs)]
-    kwargs = json.loads(kwargs)
 
-    step = kwargs.get("checkpoint_step", 0)
+    agent_cfg = AgentConfig(**json.loads(agent_cfg))
+    step = agent_cfg.agent_kwargs.get("checkpoint_step", 0)
     step = step if step is not None else 0
-    # Genius TODO
+
     per_env_results_last_reward, per_env_results_rewards = evaluation(
-        agent_name, kwargs, eval_cfgs, port, host, episodes, n_processes, python_path=python_path
+        agent_cfg=agent_cfg, eval_cfgs=eval_cfgs, episodes=episodes, n_processes=n_processes
     )
 
     # return is [envs, episodes, 3(success, reward, steps)], [envs, episodes, rewards for all steps in the episode]
@@ -405,7 +402,7 @@ def run_eval_during_training(
         per_env_results_last_reward,
         per_env_results_rewards,
         eval_cfgs,
-        model_cfg={"agent_name": agent_name, "kwargs": kwargs},
+        agent_cfg=agent_cfg,
         out=output_path,
     )
     print("Evaluation is done! Log has been written to ", os.path.join(output_path, path))
