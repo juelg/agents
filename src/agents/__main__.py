@@ -201,10 +201,7 @@ def run_eval_post_training(
     for idx in range(len(steps)):
         agent_cfgs[idx].port += idx
     with Pool(n_processes) as p:
-        args = [
-            (step, agent_cfgs[idx], eval_cfgs, episodes, 1, gpus_ids[idx])
-            for idx, step in enumerate(steps)
-        ]
+        args = [(step, agent_cfgs[idx], eval_cfgs, episodes, 1, gpus_ids[idx]) for idx, step in enumerate(steps)]
         results = p.map(_per_process, args)
     logging.info("Finished evaluation")
 
@@ -264,7 +261,9 @@ def run_eval_during_training(
     - just for one model, but many envs
     - can be new run but at least in the same project and same group as the training
     """
-    assert agent_cfg["agent_name"] != "Test", "agent_cfg needs to be passed as a json argument. See the default for an example."
+    assert (
+        agent_cfg["agent_name"] != "Test"
+    ), "agent_cfg needs to be passed as a json argument. See the default for an example."
 
     if wandb_first:
         wandb.init(

@@ -333,7 +333,9 @@ def evaluation(
     n_processes: int = 1,
 ):
     logging.info(f"Starting evaluation with {agent_cfg.agent_name} and {agent_cfg.agent_kwargs}")
-    with start_server(agent_cfg.agent_name, agent_cfg.agent_kwargs, agent_cfg.port, agent_cfg.host, agent_cfg.python_path) as p:
+    with start_server(
+        agent_cfg.agent_name, agent_cfg.agent_kwargs, agent_cfg.port, agent_cfg.host, agent_cfg.python_path
+    ) as p:
         res = multi_eval(agent_cfg, eval_cfgs, episodes, n_processes)
         logging.info("Evaluation finished")
         # send ctrl c signal
@@ -363,15 +365,14 @@ def run_eval_during_training(
     wandb_first: bool = False,
     episodes: int = 100,
     n_processes: int | None = None,
-    cmd = None,
+    cmd=None,
 ):
     if cmd is None:
         cmd = ["python"]
     cmd += [
         "-m",
         "agents" "run-eval-during-training",
-        f"--agent-cfg={json.dumps(asdict(agent_cfg))}"
-        f"--episodes={episodes}",
+        f"--agent-cfg={json.dumps(asdict(agent_cfg))}" f"--episodes={episodes}",
         f"--n-processes={n_processes}",
         f"--eval-cfgs={json.dumps([asdict(cfg) for cfg in eval_cfgs])}",
         f"--wandb-id={wandb_id}",
@@ -401,20 +402,19 @@ def run_eval_post_training(
     episodes: int = 100,
     n_processes: int | None = None,
     n_gpus: int = 1,
-    cmd = None,
+    cmd=None,
 ):
     if cmd is None:
         cmd = ["python"]
 
     slurm.sbatch(
         shlex.join(
-            cmd +
-            [
+            cmd
+            + [
                 "-m",
                 "agents",
                 "run-eval-post-training",
-                f"--agent-cfg={json.dumps(asdict(agent_cfg))}"
-                f"--episodes={episodes}",
+                f"--agent-cfg={json.dumps(asdict(agent_cfg))}" f"--episodes={episodes}",
                 f"--n-processes={n_processes}",
                 f"--eval-cfgs={json.dumps([asdict(cfg) for cfg in eval_cfgs])}",
                 f"--wandb-group={wandb_group.replace(':', '_') if wandb_group else ''}",
