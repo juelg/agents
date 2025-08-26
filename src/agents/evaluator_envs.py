@@ -368,9 +368,11 @@ def run_eval_during_training(
     host="localhost",
     episodes: int = 100,
     n_processes: int | None = None,
+    cmd = None,
 ):
-    cmd = [
-        "python",
+    if cmd is None:
+        cmd = ["python"]
+    cmd += [
         "-m",
         "agents" "run-eval-during-training",
         agent_name,
@@ -409,18 +411,16 @@ def run_eval_post_training(
     host="localhost",
     episodes: int = 100,
     n_processes: int | None = None,
-    video: bool = False,
     n_gpus: int = 1,
+    cmd = None,
 ):
-    if video:
-        run_recordings = os.path.join(output_path, "run_recordings")
-        os.mkdir(run_recordings)
-        for cfg in eval_cfgs:
-            cfg.env_kwargs["video_dir"] = run_recordings
+    if cmd is None:
+        cmd = ["python"]
+
     slurm.sbatch(
         shlex.join(
+            cmd +
             [
-                "python",
                 "-m",
                 "agents",
                 "run-eval-post-training",
