@@ -124,6 +124,42 @@ class TestAgent(Agent):
         return info
 
 
+class OpenPiModel(Agent):
+
+    def __init__(
+        self,
+        model_name: str = "pi0_fast_droid",
+        default_checkpoint_path: str = "gs://openpi-assets/checkpoints/pi0_fast_droid",
+        **kwargs,
+    ) -> None:
+        super().__init__(default_checkpoint_path=default_checkpoint_path, **kwargs)
+        from openpi.training import config
+
+        self.cfg = config.get_config(model_name)
+
+    def initialize(self):
+        from openpi.policies import policy_config
+        from openpi.shared import download
+
+        checkpoint_dir = download.maybe_download(self.checkpoint_path)
+
+        # Create a trained policy.
+        self.policy = policy_config.create_trained_policy(self.cfg, checkpoint_dir)
+
+    def act(self, obs: Obs) -> Act:
+        # Run inference on a dummy example.
+        observation = {f"observation/{k}": v for k, v in obs.cameras.items()}
+        observation.update(
+            {
+                "observation/joint_position": obs.info["joints"],
+                "observation/gripper_position": obs.gripper,
+                "prompt": self.instruction,
+            }
+        )
+        action_chunk = self.policy.infer(observation)["actions"]
+        return Act(action=action_chunk[0])
+
+
 class OpenVLAModel(Agent):
     # === Utilities ===
     SYSTEM_PROMPT = (
@@ -457,4 +493,5 @@ AGENTS = dict(
     openvla=OpenVLAModel,
     octodist=OctoActionDistribution,
     openvladist=OpenVLADistribution,
+    openpi=OpenPiModel,
 )
