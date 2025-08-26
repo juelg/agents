@@ -247,6 +247,7 @@ def run_eval_during_training(
     wandb_name: Annotated[str, typer.Option(help="weights and biases logging name.")],
     output_path: Annotated[str, typer.Option(help="Path to store the run results.")],
     wandb_first: Annotated[bool, typer.Option(help="whether its the first eval.")] = False,
+    wandb_step_metric: Annotated[str, typer.Option(help="weights and biases logging step metric.")] = "global_step",
     kwargs: Annotated[str, typer.Option(help="args to start the agent.")] = "{}",
     port: Annotated[int, typer.Option(help="Port to run the server on.")] = 8080,
     host: Annotated[str, typer.Option(help="Host to run the server on.")] = "localhost",
@@ -257,29 +258,44 @@ def run_eval_during_training(
     ] = '[{"env": "rcs/SimplePickUpSim-v0", "kwargs": {}}]',
     python_path: Annotated[str, typer.Option(help="Full path to the policy environment's python")] = "python",
 ):
+    # First check if all the str arguments are actually valid...
+    null_values = ["None", "null", "none", "null"]
+    agent_name = agent_name if (agent_name and (agent_name not in null_values)) else None
+    wandb_name = wandb_name if (wandb_name and (wandb_name not in null_values)) else None
+    wandb_id = wandb_id if (wandb_id and (wandb_id not in null_values)) else None
+    wandb_group = wandb_group if (wandb_group and (wandb_group not in null_values)) else None
+    wandb_project = wandb_project if (wandb_project and (wandb_project not in null_values)) else None
+    wandb_entity = wandb_entity if (wandb_entity and (wandb_entity not in null_values)) else None
+    wandb_note = wandb_note if (wandb_note and (wandb_note not in null_values)) else None
+    wandb_name = wandb_name if (wandb_name and (wandb_name not in null_values)) else None
+
     """
     during training eval, all need to use the same id
     - just for one model, but many envs
     - can be new run but at least in the same project and same group as the training
     """
 
-    if wandb_first:
-        wandb.init(
-            id=wandb_id,
-            entity=wandb_entity,
-            resume="allow",
-            group=wandb_group,
-            project=wandb_project,
-            config=dict(agent_name=agent_name, agent_kwargs=json.loads(kwargs), eval_cfgs=json.loads(eval_cfgs)),
-            notes=wandb_note,
-            job_type="eval",
-            name=wandb_name,
-        )
+    os.environ.pop("WANDB_SERVICE", None)
+    os.environ.pop("WANDB_SERVICE_TRANSPORT", None)
+    # if wandb_first:
+    #     # Get rid of any possible trace of the existing wandb client 
+    #     # extra safety if child is invoked in other ways:
+    #     wandb.init(
+    #         id=wandb_id,
+    #         entity=wandb_entity,
+    #         resume="allow",
+    #         group=wandb_group,
+    #         project=wandb_project,
+    #         config=dict(agent_name=agent_name, agent_kwargs=json.loads(kwargs), eval_cfgs=json.loads(eval_cfgs)),
+    #         notes=wandb_note,
+    #         job_type="eval",
+    #         name=wandb_name,
+    #     )
 
-        wandb_log_git_diff(output_path)
-        wandb.run.log_code(".")
-    else:
-        wandb.init(id=wandb_id, entity=wandb_entity, resume="must", project=wandb_project)
+    #     # wandb_log_git_diff(output_path)
+    #     wandb.run.log_code(".")
+    # else:
+    wandb.init(id=wandb_id, entity=wandb_entity, resume="must", project=wandb_project)
 
     eval_cfgs = [EvalConfig(**cfg) for cfg in json.loads(eval_cfgs)]
     kwargs = json.loads(kwargs)
@@ -288,7 +304,7 @@ def run_eval_during_training(
     step = step if step is not None else 0
     # Genius TODO
     per_env_results_last_reward, per_env_results_rewards = evaluation(
-        agent_name, kwargs, eval_cfgs, port, host, episodes, n_processes, python=python_path
+        agent_name, kwargs, eval_cfgs, port, host, episodes, n_processes, python_path=python_path
     )
 
     # return is [envs, episodes, 3(success, reward, steps)], [envs, episodes, rewards for all steps in the episode]
@@ -298,79 +314,80 @@ def run_eval_during_training(
 
     # these new define metric to also not work with several jobs
     # wandb says that logging can only be done in run groups
-    if wandb_first:
+    # if wandb_first:
+    wandb.define_metric(wandb_step_metric)
+    wandb.define_metric(
+        "total/success",
+        step_metric=wandb_step_metric,
+        overwrite=False,
+        step_sync=False,
+        hidden=False,
+        summary="max",
+    )
+    wandb.define_metric(
+        "total/last_step_reward",
+        step_metric=wandb_step_metric,
+        overwrite=False,
+        step_sync=False,
+        hidden=False,
+        summary="max",
+    )
+    wandb.define_metric(
+        "total/total_steps",
+        step_metric=wandb_step_metric,
+        overwrite=False,
+        step_sync=False,
+        hidden=False,
+        summary="min",
+    )
+    wandb.define_metric(
+        "total/mean_reward",
+        step_metric=wandb_step_metric,
+        overwrite=False,
+        step_sync=False,
+        hidden=False,
+        summary="max",
+    )
+    for idx, env in enumerate(eval_cfgs):
         wandb.define_metric(
-            "total/success",
-            step_metric="train_step",
+            f"{env.env_id}/success",
+            step_metric=wandb_step_metric,
             overwrite=False,
             step_sync=False,
             hidden=False,
             summary="max",
         )
         wandb.define_metric(
-            "total/last_step_reward",
-            step_metric="train_step",
+            f"{env.env_id}/last_step_reward",
+            step_metric=wandb_step_metric,
             overwrite=False,
             step_sync=False,
             hidden=False,
             summary="max",
         )
         wandb.define_metric(
-            "total/total_steps",
-            step_metric="train_step",
+            f"{env.env_id}/total_steps",
+            step_metric=wandb_step_metric,
             overwrite=False,
             step_sync=False,
             hidden=False,
             summary="min",
         )
         wandb.define_metric(
-            "total/mean_reward",
-            step_metric="train_step",
+            f"{env.env_id}/mean_reward",
+            step_metric=wandb_step_metric,
             overwrite=False,
             step_sync=False,
             hidden=False,
             summary="max",
         )
-        for idx, env in enumerate(eval_cfgs):
-            wandb.define_metric(
-                f"{env.env_id}/success",
-                step_metric="train_step",
-                overwrite=False,
-                step_sync=False,
-                hidden=False,
-                summary="max",
-            )
-            wandb.define_metric(
-                f"{env.env_id}/last_step_reward",
-                step_metric="train_step",
-                overwrite=False,
-                step_sync=False,
-                hidden=False,
-                summary="max",
-            )
-            wandb.define_metric(
-                f"{env.env_id}/total_steps",
-                step_metric="train_step",
-                overwrite=False,
-                step_sync=False,
-                hidden=False,
-                summary="min",
-            )
-            wandb.define_metric(
-                f"{env.env_id}/mean_reward",
-                step_metric="train_step",
-                overwrite=False,
-                step_sync=False,
-                hidden=False,
-                summary="max",
-            )
 
     wandb_log_dict = {
         "total/success": per_env_results_last_reward.mean(axis=(0, 1))[0],
         "total/last_step_reward": per_env_results_last_reward.mean(axis=(0, 1))[1],
         "total/total_steps": per_env_results_last_reward.mean(axis=(0, 1))[2],
         "total/mean_reward": np.mean(mean_rewards),
-        "train_step": step,
+        wandb_step_metric: step,
     }
 
     # log for each env
@@ -391,6 +408,7 @@ def run_eval_during_training(
         model_cfg={"agent_name": agent_name, "kwargs": kwargs},
         out=output_path,
     )
+    print("Evaluation is done! Log has been written to ", os.path.join(output_path, path))
     wandb.log_artifact(path, type="file", name="results", aliases=[f"step_{step}"])
 
 

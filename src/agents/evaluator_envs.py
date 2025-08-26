@@ -52,6 +52,14 @@ class EvaluatorEnv(ABC):
 
     @staticmethod
     def make(env_id: str, seed: int, **env_kwargs) -> "EvaluatorEnv":
+        print(f"Making EvaluatorEnv with the following: {env_id}, {seed}, {env_kwargs}")
+        print("If you do not see a registered env_id confirmation soon, chances are the thread has crashed.")
+        if(env_id not in EvaluatorEnv.ENVS.keys()):
+            error_msg = f"env_id {env_id} is not in EvaluatorEnv.ENVS!"
+            print(error_msg)
+            raise KeyError(error_msg)
+        else:
+            print("env_id is registered!")
         return EvaluatorEnv.ENVS[env_id](env_id, seed, **env_kwargs)
 
     @staticmethod
@@ -62,27 +70,43 @@ class EvaluatorEnv(ABC):
 class RCSPickUpCubeEval(EvaluatorEnv):
     INSTRUCTIONS = {
         "rcs/FR3SimplePickUpSim-v0": "pick up the red cube",
+        "rcs/FR3LabDigitGripperPickUpSim-v0": "pick up the red cube"
     }
-    rgb_keys = ['arro', 'wrist']
-    depth_keys = ['arro', 'wrist']
-    tacto_keys = ['left_tacto_pad', 'right_tacto_pad']
-    lowdim_keys = ['joints']
-    # Make a custom version of translate_obs to take in tacto data 
+    pq_rgb_str = "observation_frames_{}_rgb_data"
+    pq_depth_str = "observation_frames_{}_depth_data"
+    pq_tacto_str = "observation_tacto_{}_rgb_data"
+    pq_lowdim_str = "observation_{}"
+    rgb_keys = ['wrist', 'arro']
+    depth_keys = []
+    tacto_keys = []
+    lowdim_keys = []
+
+    # Genius TODO: Need to find the correct way to pass the kwargs for each key
+    def __init__(self, env_id, seed, **env_kwargs):
+        self.rgb_keys = env_kwargs["rgb_keys"]
+        self.depth_keys = env_kwargs["depth_keys"]
+        self.tacto_keys = env_kwargs["tacto_keys"]
+        self.lowdim_keys = env_kwargs["lowdim_keys"]
+        del env_kwargs["rgb_keys"]
+        del env_kwargs["depth_keys"]
+        del env_kwargs["tacto_keys"]
+        del env_kwargs["lowdim_keys"]
+        super().__init__(env_id, seed, **env_kwargs)
+    # Make a custom version of translate_obs to take in tacto data
     def translate_obs(self, obs: dict[str, Any]) -> Obs:
         # does not include history
         cam_dict = {}
         info_dict = {}
-        print(obs.keys())
         for key in self.rgb_keys:
-            cam_dict["rgb_"+key] = obs["frames"][key]["rgb"]["data"]
+            cam_dict[self.pq_rgb_str.format(key)] = obs["frames"][key]["rgb"]["data"]
         for key in self.depth_keys:
-            cam_dict["depth_"+key] = obs["frames"][key]["depth"]["data"]
+            cam_dict[self.pq_depth_str.format(key)] = obs["frames"][key]["depth"]["data"]
         for key in self.tacto_keys:
-            cam_dict["tacto_"+key] = obs["tacto"][key]["rgb"]["data"]
+            cam_dict[self.pq_tacto_str.format(key)] = obs["tacto"][key]["rgb"]["data"]
         for key in self.lowdim_keys:
-            info_dict[key] = obs[key]
+            info_dict[self.pq_lowdim_str.format(key)] = obs[key]
         return Obs(
-            cameras=dict(rgb_side=side),
+            cameras=cam_dict,
             gripper=obs["gripper"],
             info=info_dict
         )
@@ -110,11 +134,11 @@ class RCSPickUpCubeEval(EvaluatorEnv):
 
     @staticmethod
     def do_import():
+        # The main RCS environment is doing do_import
         import rcs
 
-
 EvaluatorEnv.register("rcs/FR3SimplePickUpSim-v0", RCSPickUpCubeEval)
-
+EvaluatorEnv.register("rcs/FR3LabDigitGripperPickUpSim-v0", RCSPickUpCubeEval)
 
 class ManiSkill(EvaluatorEnv):
     INSTRUCTIONS = {
@@ -376,7 +400,7 @@ def run_eval_during_training(
     wandb_name: str,
     rcs_python_path: str,
     policy_python_path: str,
-    slurm: Slurm,
+    # slurm: Slurm,
     output_path: str,
     wandb_first: bool = False,
     port=8080,
@@ -387,7 +411,8 @@ def run_eval_during_training(
     cmd = [ # prepend the environment path to the correct python with rcs installed 
         f"{rcs_python_path}",
         "-m",
-        "agents" "run-eval-during-training",
+        "agents",
+        "run-eval-during-training",
         agent_name,
         f"--kwargs={json.dumps(kwargs)}",
         f"--port={port}",
@@ -396,7 +421,7 @@ def run_eval_during_training(
         f"--n-processes={n_processes}",
         f"--eval-cfgs={json.dumps([asdict(cfg) for cfg in eval_cfgs])}",
         f"--wandb-id={wandb_id}",
-        f"--wandb-group={wandb_group.replace(':', '_')}",
+        f"--wandb-group={wandb_group.replace(':', '_') if wandb_group else ''}",
         f"--wandb-project={wandb_project}",
         f"--wandb-entity={wandb_entity}",
         f"--wandb-note={wandb_note}",
@@ -407,7 +432,7 @@ def run_eval_during_training(
     if wandb_first:
         cmd.append("--wandb-first")
     # use a subprocess tool from python to execute the command 
-    p = subprocess.Popen(cmd)
+    p = subprocess.call(cmd)
     # slurm.sbatch(shlex.join(cmd)) 
 
 

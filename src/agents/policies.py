@@ -460,6 +460,8 @@ class DiffusionPolicy(Agent):
         checkpoint_path: str = "/home/walter/Weights/latest.ckpt",
         steps_per_inference: int = 3,
         control_frequency_hz: int = 30,
+        rgb_keys: list[str] = ["rgb_side_view"],
+        device = "cuda",
         **kwargs,
     ) -> None:
         super().__init__(default_checkpoint_path="", **kwargs)
@@ -467,6 +469,8 @@ class DiffusionPolicy(Agent):
         self.checkpoint_path = checkpoint_path
         self.steps_per_inference = steps_per_inference
         self.control_frequency_hz = control_frequency_hz
+        self.rgb_keys = rgb_keys
+        self.device = device
 
         self.step = self.steps_per_inference
         self.last_action_time = None
@@ -489,7 +493,7 @@ class DiffusionPolicy(Agent):
         sys.path.insert(0, "/home/walter/Code/private-diffusion-policy-fork")
         from diffusion_policy.utn.agent import UTNDiffusionPolicy
 
-        self.policy = UTNDiffusionPolicy(self.checkpoint_path)
+        self.policy = UTNDiffusionPolicy(self.checkpoint_path, self.rgb_keys, self.device)
         self.policy.initialize()
         self.obs_buffer = deque(maxlen=self.policy.cfg.n_obs_steps)
 
@@ -499,16 +503,16 @@ class DiffusionPolicy(Agent):
         # from diffusion_policy.utn.arro import ARROSegmentation
 
         # segmented_img = arro.segment(obs.rgb_side)
-
-        self.obs_buffer.append(obs.rgb_side)
+        rgb_obs = [obs.cameras[key] for key in self.rgb_keys]
+        self.obs_buffer.append(rgb_obs)
 
 
         if self.step >= self.steps_per_inference:
-            print("Computing new actions")
+            # print("Computing new actions")
             self.actions = self.policy.act(self.obs_buffer)
             self.step = 0
 
-        print("Action: ", self.actions[self.step])
+        # print("Action: ", self.actions[self.step])
 
         # Needs to be activated if robot is running in async mode
         
@@ -525,12 +529,13 @@ class DiffusionPolicy(Agent):
 
     def reset(self, obs: Obs, instruction: Any):
         super().reset(obs, instruction="")
-        image = obs.rgb_side
+        images = [obs.cameras[key] for key in self.rgb_keys]
         self.obs_buffer.clear()
         self.policy.reset()
         self.last_action_time = None
         self.step = self.steps_per_inference
-        self.obs_buffer.extend([image] * self.policy.cfg.n_obs_steps)
+        images_extended = [images for _ in range(int(self.policy.cfg.n_obs_steps))]
+        self.obs_buffer.extend(images_extended)
         return {}
 
 class ReplayPolicy(Agent):
