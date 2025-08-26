@@ -434,7 +434,7 @@ def write_results(
     results: np.ndarray,
     rewards: list[list[list[float]]],
     eval_cfgs: list[EvalConfig],
-    model_cfg: dict[str, Any],
+    agent_cfg: AgentConfig,
     out: str = "",
 ) -> str:
     # first read json, if not exists write empty list
@@ -488,7 +488,7 @@ def write_results(
                 "episodes": len(results),
                 "timestamp": datetime.datetime.now().isoformat(),
                 "env_cfg": asdict(cfg),
-                "model_cfg": model_cfg,
+                "agent_cfg": asdict(agent_cfg),
             }
         )
 

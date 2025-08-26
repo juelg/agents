@@ -234,7 +234,7 @@ def run_eval_post_training(
             per_env_results_last_reward,
             per_env_results_rewards,
             eval_cfgs,
-            model_cfg={} #{"agent_name": agent_name, "kwargs": kwargs},
+            agent_cfg=agent_cfg,
             out=output_path,
         )
         wandb.log_artifact(path, type="file", name="results", aliases=[f"step_{step}"])
@@ -391,7 +391,7 @@ def run_eval_during_training(
         per_env_results_last_reward,
         per_env_results_rewards,
         eval_cfgs,
-        model_cfg={}, #{"agent_name": agent_name, "kwargs": kwargs},
+        agent_cfg=agent_cfg,
         out=output_path,
     )
     wandb.log_artifact(path, type="file", name="results", aliases=[f"step_{step}"])
