@@ -202,10 +202,13 @@ class EvalConfig:
 
 
 @dataclass
-class ClientConfig:
+class AgentConfig:
     host: str
-    port: int
-    model: str
+    agent_name: str
+    agent_kwargs: dict[str, Any]
+    python_path: str = "python"
+    """modify this if you want to use a specific python environment """
+    port: int = 8080
 
 
 def single_eval(env: EvaluatorEnv, agent: Agent, max_steps: int) -> tuple[list[float], list[float], list[float]]:
@@ -237,23 +240,23 @@ def single_eval(env: EvaluatorEnv, agent: Agent, max_steps: int) -> tuple[list[f
 per_process_cache = {}
 
 
-def create_env_agent(client_config: ClientConfig, cfg: EvalConfig, seed: int) -> tuple[EvaluatorEnv, RemoteAgent]:
+def create_env_agent(agent_config: AgentConfig, cfg: EvalConfig, seed: int) -> tuple[EvaluatorEnv, RemoteAgent]:
     logging.info(f"retrieving env {cfg.env_id} and agent")
     if cfg.env_id not in per_process_cache:
         logging.info(f"env {cfg.env_id} not available, creating new env and agent")
         env = EvaluatorEnv.make(cfg.env_id, seed=seed, **cfg.env_kwargs)
         logging.info("done creating env")
-        agent = RemoteAgent(client_config.host, client_config.port, client_config.model)
+        agent = RemoteAgent(agent_config.host, agent_config.port, agent_config.model)
         logging.info("done creating agent")
         per_process_cache[cfg.env_id] = (env, agent)
     return per_process_cache[cfg.env_id]
 
 
-def per_process(args: tuple[int, list[EvalConfig], int, ClientConfig]) -> tuple[float, float, float]:
+def per_process(args: tuple[int, list[EvalConfig], int, AgentConfig]) -> tuple[float, float, float]:
     logging.info(f"Starting process {args}")
-    i, cfgs, episodes, client_cfg = args
+    i, cfgs, episodes, agent_cfg = args
     cfg = cfgs[i // episodes]
-    env, agent = create_env_agent(client_cfg, cfg, seed=i)
+    env, agent = create_env_agent(agent_cfg, cfg, seed=i)
     # busy wait for server to finish initialization
     while not agent.is_initialized():
         logging.info("Waiting for agent to initialize...")
@@ -262,7 +265,7 @@ def per_process(args: tuple[int, list[EvalConfig], int, ClientConfig]) -> tuple[
 
 
 def multi_eval(
-    client_cfg: ClientConfig, cfgs: list[EvalConfig], episodes: int = 100, n_processes: int = 1
+    agent_cfg: AgentConfig, cfgs: list[EvalConfig], episodes: int = 100, n_processes: int = 1
 ) -> tuple[np.ndarray, list[list[list[float]]]]:
     # return is [envs, episodes, 3(success, reward, steps)], [envs, episodes, rewards for all steps in the episode]
     logging.info(f"Starting evaluation with {len(cfgs)} environments and {episodes} episodes each")
@@ -273,7 +276,7 @@ def multi_eval(
     #     single_results = p.map(per_process, args)
 
     # without process
-    args = [(i, cfgs, episodes, client_cfg) for i in range(len(cfgs) * episodes)]
+    args = [(i, cfgs, episodes, agent_cfg) for i in range(len(cfgs) * episodes)]
     single_results = [per_process(arg) for arg in tqdm(args)]
 
     single_results_last_reward = np.array([(i[0], i[1][-1], i[2]) for i in single_results])
@@ -324,19 +327,16 @@ def start_server(
 
 
 def evaluation(
-    agent_name: str,
-    kwargs: dict[str, Any],
+    agent_cfg: AgentConfig,
     eval_cfgs: list[EvalConfig],
-    port: int = 8080,
-    host: str = "localhost",
     episodes: int = 100,
     n_processes: int = 1,
-    python_path: str = "python",
 ):
-    logging.info(f"Starting evaluation with {agent_name} and {kwargs}")
-    with start_server(agent_name, kwargs, port, host, python_path) as p:
-        client_cfg = ClientConfig(host, port, agent_name)
-        res = multi_eval(client_cfg, eval_cfgs, episodes, n_processes)
+    logging.info(f"Starting evaluation with {agent_cfg.agent_name} and {agent_cfg.agent_kwargs}")
+    with start_server(
+        agent_cfg.agent_name, agent_cfg.agent_kwargs, agent_cfg.port, agent_cfg.host, agent_cfg.python_path
+    ) as p:
+        res = multi_eval(agent_cfg, eval_cfgs, episodes, n_processes)
         logging.info("Evaluation finished")
         # send ctrl c signal
         p.send_signal(subprocess.signal.SIGINT)
@@ -352,8 +352,7 @@ def evaluation(
 
 
 def run_eval_during_training(
-    agent_name: str,
-    kwargs: dict[str, Any],
+    agent_cfg: AgentConfig,
     eval_cfgs: list[EvalConfig],
     wandb_id: str,
     wandb_entity: str,
@@ -364,20 +363,16 @@ def run_eval_during_training(
     slurm: Slurm,
     output_path: str,
     wandb_first: bool = False,
-    port=8080,
-    host="localhost",
     episodes: int = 100,
     n_processes: int | None = None,
+    cmd=None,
 ):
-    cmd = [
-        "python",
+    if cmd is None:
+        cmd = ["python"]
+    cmd += [
         "-m",
         "agents" "run-eval-during-training",
-        agent_name,
-        f"--kwargs={json.dumps(kwargs)}",
-        f"--port={port}",
-        f"--host={host}",
-        f"--episodes={episodes}",
+        f"--agent-cfg={json.dumps(asdict(agent_cfg))}" f"--episodes={episodes}",
         f"--n-processes={n_processes}",
         f"--eval-cfgs={json.dumps([asdict(cfg) for cfg in eval_cfgs])}",
         f"--wandb-id={wandb_id}",
@@ -394,8 +389,7 @@ def run_eval_during_training(
 
 
 def run_eval_post_training(
-    agent_name: str,
-    kwargs: dict[str, Any],
+    agent_cfg: AgentConfig,
     eval_cfgs: list[EvalConfig],
     wandb_entity: str,
     wandb_project: str,
@@ -405,30 +399,22 @@ def run_eval_post_training(
     slurm: Slurm,
     output_path: str,
     wandb_group: str | None = None,
-    port=8080,
-    host="localhost",
     episodes: int = 100,
     n_processes: int | None = None,
-    video: bool = False,
     n_gpus: int = 1,
+    cmd=None,
 ):
-    if video:
-        run_recordings = os.path.join(output_path, "run_recordings")
-        os.mkdir(run_recordings)
-        for cfg in eval_cfgs:
-            cfg.env_kwargs["video_dir"] = run_recordings
+    if cmd is None:
+        cmd = ["python"]
+
     slurm.sbatch(
         shlex.join(
-            [
-                "python",
+            cmd
+            + [
                 "-m",
                 "agents",
                 "run-eval-post-training",
-                agent_name,
-                f"--kwargs={json.dumps(kwargs)}",
-                f"--port={port}",
-                f"--host={host}",
-                f"--episodes={episodes}",
+                f"--agent-cfg={json.dumps(asdict(agent_cfg))}" f"--episodes={episodes}",
                 f"--n-processes={n_processes}",
                 f"--eval-cfgs={json.dumps([asdict(cfg) for cfg in eval_cfgs])}",
                 f"--wandb-group={wandb_group.replace(':', '_') if wandb_group else ''}",
@@ -448,7 +434,7 @@ def write_results(
     results: np.ndarray,
     rewards: list[list[list[float]]],
     eval_cfgs: list[EvalConfig],
-    model_cfg: dict[str, Any],
+    agent_cfg: AgentConfig,
     out: str = "",
 ) -> str:
     # first read json, if not exists write empty list
@@ -502,7 +488,7 @@ def write_results(
                 "episodes": len(results),
                 "timestamp": datetime.datetime.now().isoformat(),
                 "env_cfg": asdict(cfg),
-                "model_cfg": model_cfg,
+                "agent_cfg": asdict(agent_cfg),
             }
         )
 
