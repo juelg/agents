@@ -461,6 +461,9 @@ class DiffusionPolicy(Agent):
         steps_per_inference: int = 3,
         control_frequency_hz: int = 30,
         rgb_keys: list[str] = ["rgb_side_view"],
+        depth_keys: list[str] = [],
+        tacto_keys: list[str] = [],
+        lowdim_keys: list[str] = [],
         device = "cuda",
         **kwargs,
     ) -> None:
@@ -470,6 +473,9 @@ class DiffusionPolicy(Agent):
         self.steps_per_inference = steps_per_inference
         self.control_frequency_hz = control_frequency_hz
         self.rgb_keys = rgb_keys
+        self.depth_keys = depth_keys
+        self.tacto_keys = tacto_keys
+        self.lowdim_keys = lowdim_keys 
         self.device = device
 
         self.step = self.steps_per_inference
@@ -493,7 +499,12 @@ class DiffusionPolicy(Agent):
         sys.path.insert(0, "/home/walter/Code/private-diffusion-policy-fork")
         from diffusion_policy.utn.agent import UTNDiffusionPolicy
 
-        self.policy = UTNDiffusionPolicy(self.checkpoint_path, self.rgb_keys, self.device)
+        self.policy = UTNDiffusionPolicy(checkpoint_path = self.checkpoint_path, 
+                                         rgb_keys = self.rgb_keys, 
+                                         depth_keys = self.depth_keys,
+                                         tacto_keys = self.tacto_keys,
+                                         lowdim_keys = self.lowdim_keys,
+                                         device = self.device)
         self.policy.initialize()
         self.obs_buffer = deque(maxlen=self.policy.cfg.n_obs_steps)
 
@@ -503,9 +514,16 @@ class DiffusionPolicy(Agent):
         # from diffusion_policy.utn.arro import ARROSegmentation
 
         # segmented_img = arro.segment(obs.rgb_side)
-        rgb_obs = [obs.cameras[key] for key in self.rgb_keys]
-        self.obs_buffer.append(rgb_obs)
-
+        combined_obs = []
+        for key in self.rgb_keys:
+            combined_obs.append(obs.cameras[key])
+        for key in self.depth_keys:
+            combined_obs.append(obs.cameras[key])
+        for key in self.tacto_keys:
+            combined_obs.append(obs.cameras[key])
+        for key in self.lowdim_keys:
+            combined_obs.append(obs.info[key])
+        self.obs_buffer.append(combined_obs)
 
         if self.step >= self.steps_per_inference:
             # print("Computing new actions")
@@ -529,13 +547,21 @@ class DiffusionPolicy(Agent):
 
     def reset(self, obs: Obs, instruction: Any):
         super().reset(obs, instruction="")
-        images = [obs.cameras[key] for key in self.rgb_keys]
+        combined_obs = []
+        for key in self.rgb_keys:
+            combined_obs.append(obs.cameras[key])
+        for key in self.depth_keys:
+            combined_obs.append(obs.cameras[key])
+        for key in self.tacto_keys:
+            combined_obs.append(obs.cameras[key])
+        for key in self.lowdim_keys:
+            combined_obs.append(obs.info[key])
         self.obs_buffer.clear()
         self.policy.reset()
         self.last_action_time = None
         self.step = self.steps_per_inference
-        images_extended = [images for _ in range(int(self.policy.cfg.n_obs_steps))]
-        self.obs_buffer.extend(images_extended)
+        combined_obs_extended = [combined_obs for _ in range(int(self.policy.cfg.n_obs_steps))]
+        self.obs_buffer.extend(combined_obs_extended)
         return {}
 
 class ReplayPolicy(Agent):
@@ -559,7 +585,7 @@ class ReplayPolicy(Agent):
         
     def reset(self, obs=None, instruction=None, **kwargs):
         import sys
-        sys.path.insert(0, "/home/walter/Code/private-diffusion-policy-fork")
+        sys.path.insert(0, "/workspace/private-diffusion-policy-fork")
         from diffusion_policy.common.replay_buffer import ReplayBuffer
         super().reset(obs, instruction, **kwargs)
 
