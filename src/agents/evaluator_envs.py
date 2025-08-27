@@ -101,6 +101,7 @@ class RCSPickUpCubeEval(EvaluatorEnv):
             cam_dict[self.pq_rgb_str.format(key)] = obs["frames"][key]["rgb"]["data"]
         for key in self.depth_keys:
             cam_dict[self.pq_depth_str.format(key)] = obs["frames"][key]["depth"]["data"]
+            # H, W, C 
         for key in self.tacto_keys:
             cam_dict[self.pq_tacto_str.format(key)] = obs["tacto"][key]["rgb"]["data"]
         for key in self.lowdim_keys:
@@ -277,35 +278,35 @@ def single_eval(env: EvaluatorEnv, agent: Agent, max_steps: int) -> tuple[list[f
 per_process_cache = {}
 
 
-def create_env_agent(agent_config: AgentConfig, cfg: EvalConfig, seed: int) -> tuple[EvaluatorEnv, RemoteAgent]:
-    logging.info(f"retrieving env {cfg.env_id} and agent")
-    if cfg.env_id not in per_process_cache:
-        logging.info(f"env {cfg.env_id} not available, creating new env and agent")
-        env = EvaluatorEnv.make(cfg.env_id, seed=seed, **cfg.env_kwargs)
+def create_env_agent(agent_config: AgentConfig, eval_cfg: EvalConfig, seed: int) -> tuple[EvaluatorEnv, RemoteAgent]:
+    logging.info(f"retrieving env {eval_cfg.env_id} and agent")
+    if eval_cfg.env_id not in per_process_cache:
+        logging.info(f"env {eval_cfg.env_id} not available, creating new env and agent")
+        env = EvaluatorEnv.make(eval_cfg.env_id, seed=seed, **eval_cfg.env_kwargs)
         logging.info("done creating env")
         agent = RemoteAgent(agent_config.host, agent_config.port, agent_config.agent_name)
         logging.info("done creating agent")
-        per_process_cache[cfg.env_id] = (env, agent)
-    return per_process_cache[cfg.env_id]
+        per_process_cache[eval_cfg.env_id] = (env, agent)
+    return per_process_cache[eval_cfg.env_id]
 
 
 def per_process(args: tuple[int, list[EvalConfig], int, AgentConfig]) -> tuple[float, float, float]:
     logging.info(f"Starting process {args}")
-    i, cfgs, episodes, agent_cfg = args
-    cfg = cfgs[i // episodes]
-    env, agent = create_env_agent(agent_cfg, cfg, seed=i)
+    i, eval_cfgs, episodes, agent_cfg = args
+    eval_cfg = eval_cfgs[i // episodes]
+    env, agent = create_env_agent(agent_cfg, eval_cfg, seed=i)
     # busy wait for server to finish initialization
     while not agent.is_initialized():
         logging.info("Waiting for agent to initialize...")
         sleep(5)
-    return single_eval(env, agent, cfg.max_steps_per_episode)
+    return single_eval(env, agent, eval_cfg.max_steps_per_episode)
 
 
 def multi_eval(
-    agent_cfg: AgentConfig, cfgs: list[EvalConfig], episodes: int = 100, n_processes: int = 1
+    agent_cfg: AgentConfig, eval_cfgs: list[EvalConfig], episodes: int = 100, n_processes: int = 1
 ) -> tuple[np.ndarray, list[list[list[float]]]]:
     # return is [envs, episodes, 3(success, reward, steps)], [envs, episodes, rewards for all steps in the episode]
-    logging.info(f"Starting evaluation with {len(cfgs)} environments and {episodes} episodes each")
+    logging.info(f"Starting evaluation with {len(eval_cfgs)} environments and {episodes} episodes each")
 
     # with process
     # with Pool(n_processes) as p:
@@ -313,14 +314,14 @@ def multi_eval(
     #     single_results = p.map(per_process, args)
 
     # without process
-    args = [(i, cfgs, episodes, agent_cfg) for i in range(len(cfgs) * episodes)]
+    args = [(i, eval_cfgs, episodes, agent_cfg) for i in range(len(eval_cfgs) * episodes)]
     single_results = [per_process(arg) for arg in tqdm(args)]
 
     single_results_last_reward = np.array([(i[0], i[1][-1], i[2]) for i in single_results])
 
     # this works because row-major order
     # per_env_results = single_results.reshape(len(cfgs), episodes, 3)
-    per_env_results_last_reward = single_results_last_reward.reshape(len(cfgs), episodes, 3)
+    per_env_results_last_reward = single_results_last_reward.reshape(len(eval_cfgs), episodes, 3)
     per_env_results_rewards = [
         [i[1] for i in single_results[i : i + episodes]] for i in range(0, len(single_results), episodes)
     ]
