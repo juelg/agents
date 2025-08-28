@@ -255,7 +255,7 @@ def create_env_agent(agent_config: AgentConfig, cfg: EvalConfig, seed: int) -> t
 def run_episode(args: tuple[int, list[EvalConfig], int, AgentConfig]) -> tuple[float, float, float]:
     i, cfgs, episodes, agent_cfg = args
     cfg = cfgs[i // episodes]
-    env, agent = create_env_agent(agent_cfg, cfg, seed=idx)
+    env, agent = create_env_agent(agent_cfg, cfg, seed=i)
     # busy wait for server to finish initialization
     while not agent.is_initialized():
         logging.info("Waiting for agent to initialize...")
