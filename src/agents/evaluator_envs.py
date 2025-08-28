@@ -242,14 +242,15 @@ per_process_cache = {}
 
 def create_env_agent(agent_config: AgentConfig, cfg: EvalConfig, seed: int) -> tuple[EvaluatorEnv, RemoteAgent]:
     logging.debug(f"retrieving env {cfg.env_id} and agent")
-    if cfg.env_id not in per_process_cache:
+    key = (cfg.env_id, agent_config.host, agent_config.port)
+    if key not in per_process_cache:
         logging.info(f"env {cfg.env_id} not available, creating new env and agent")
         env = EvaluatorEnv.make(cfg.env_id, seed=seed, **cfg.env_kwargs)
         logging.info("done creating env")
         agent = RemoteAgent(agent_config.host, agent_config.port, agent_config.agent_name)
         logging.info("done creating agent")
-        per_process_cache[cfg.env_id] = (env, agent)
-    return per_process_cache[cfg.env_id]
+        per_process_cache[key] = (env, agent)
+    return per_process_cache[key]
 
 
 def run_episode(args: tuple[int, list[EvalConfig], int, AgentConfig]) -> tuple[float, float, float]:
@@ -331,6 +332,7 @@ def evaluation(
     episodes: int = 100,
     n_processes: int = 1,
 ):
+    per_process_cache.clear()
     logging.info(f"Starting evaluation with {agent_cfg.agent_name} and {agent_cfg.agent_kwargs}")
     with start_server(
         agent_cfg.agent_name, agent_cfg.agent_kwargs, agent_cfg.port, agent_cfg.host, agent_cfg.python_path
