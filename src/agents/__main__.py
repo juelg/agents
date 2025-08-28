@@ -157,7 +157,6 @@ def run_eval_post_training(
         summary="max",
     )
     eval_cfgs = [EvalConfig(**cfg) for cfg in json.loads(eval_cfgs)]
-    kwargs = json.loads(kwargs)
     for idx, env in enumerate(eval_cfgs):
         wandb.define_metric(
             f"{env.env_id}/success",
@@ -197,7 +196,7 @@ def run_eval_post_training(
 
     # spawn n processes and run in parallel
 
-    agent_cfgs = [AgentConfig(**json.loads(agent_cfg)) for _ in range(steps)]
+    agent_cfgs = [AgentConfig(**json.loads(agent_cfg)) for _ in steps]
     for idx in range(len(steps)):
         agent_cfgs[idx].port += idx
     with Pool(n_processes) as p:
@@ -231,7 +230,7 @@ def run_eval_post_training(
             per_env_results_last_reward,
             per_env_results_rewards,
             eval_cfgs,
-            agent_cfg=agent_cfg,
+            agent_cfg=agent_cfgs[0],
             out=output_path,
         )
         wandb.log_artifact(path, type="file", name="results", aliases=[f"step_{step}"])
