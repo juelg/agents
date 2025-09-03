@@ -130,6 +130,7 @@ class OpenPiModel(Agent):
         self,
         train_config_name: str = "pi0_droid",
         default_checkpoint_path: str = "gs://openpi-assets/checkpoints/pi0_droid",
+        execution_horizon=20,
         **kwargs,
     ) -> None:
         super().__init__(default_checkpoint_path=default_checkpoint_path, **kwargs)
@@ -139,6 +140,10 @@ class OpenPiModel(Agent):
         self.openpi_path = self.checkpoint_path.format(checkpoint_step=self.checkpoint_step)
 
         self.cfg = config.get_config(train_config_name)
+        self.execution_horizon = execution_horizon
+
+        self.chunk_counter = self.execution_horizon
+        self._cached_action_chunk = None
 
     def initialize(self):
         from openpi.policies import policy_config
@@ -150,6 +155,12 @@ class OpenPiModel(Agent):
         self.policy = policy_config.create_trained_policy(self.cfg, checkpoint_dir)
 
     def act(self, obs: Obs) -> Act:
+        if self.chunk_counter < self.execution_horizon:
+            self.chunk_counter += 1
+            return Act(action=self._cached_action_chunk[self.chunk_counter])
+
+        else:
+            self.chunk_counter = 0
         observation = {f"observation/{k}": np.copy(v).transpose(2, 0, 1) for k, v in obs.cameras.items()}
         observation.update(
             {
@@ -162,8 +173,15 @@ class OpenPiModel(Agent):
 
         # convert gripper action into agents format
         action_chunk[:, -1] = 1 - action_chunk[:, -1]
+        self._cached_action_chunk = action_chunk
 
         return Act(action=action_chunk[0])
+
+    def reset(self, obs: Obs, instruction: Any):
+        super().reset(obs, instruction)
+        self.chunk_counter = self.execution_horizon
+        self._cached_action_chunk = None
+        return {}
 
 
 class OpenVLAModel(Agent):
