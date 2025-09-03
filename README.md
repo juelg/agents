@@ -100,6 +100,24 @@ pip install git+https://github.com/juelg/agents.git
 
 For more details, see the [OpenVLA github page](https://github.com/openvla/openvla).
 
+### OpenPi / Pi0
+To use OpenPi, create a new conda environment:
+```shell
+conda create -n openpi python=3.11 -y
+conda activate openpi
+```
+Clone the repo and install it.
+```shell
+git clone --recurse-submodules git@github.com:Physical-Intelligence/openpi.git
+# Or if you already cloned the repo:
+git submodule update --init --recursive
+# install dependencies
+GIT_LFS_SKIP_SMUDGE=1 uv sync
+GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
+```
+For more details see [openpi's github](https://github.com/Physical-Intelligence/openpi).
+
+
 ## Usage
 To start an agents server use the `start-server` command where `kwargs` is a dictionary of the constructor arguments of the policy you want to start e.g.
 ```shell
@@ -107,6 +125,8 @@ To start an agents server use the `start-server` command where `kwargs` is a dic
 python -m agents start-server octo --host localhost --port 8080 --kwargs '{"checkpoint_path": "hf://Juelg/octo-base-1.5-finetuned-maniskill", "checkpoint_step": None, "horizon": 1, "unnorm_key": []}'
 # openvla
 python -m agents start-server openvla --host localhost --port 8080 --kwargs '{"checkpoint_path": "Juelg/openvla-7b-finetuned-maniskill", "device": "cuda:0", "attn_implementation": "flash_attention_2", "unnorm_key": "maniskill_human:7.0.0", "checkpoint_step": 40000}'
+# openpi
+python -m agents start-server openpi --port=8080 --host=localhost --kwargs='{"checkpoint_path": "<path to checkpoint>/{checkpoint_step}", "model_name": "pi0_rcs", "checkpoint_step": <checkpoint_step>}' # leave "{checkpoint_step}" it will be replaced, "model_name" is the key for the training config
 ```
 
 There is also the `run-eval-during-training` command to evaluate a model during training, so a single checkpoint.
