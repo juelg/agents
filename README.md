@@ -129,6 +129,13 @@ python -m agents start-server openvla --host localhost --port 8080 --kwargs '{"c
 python -m agents start-server openpi --port=8080 --host=localhost --kwargs='{"checkpoint_path": "<path to checkpoint>/{checkpoint_step}", "model_name": "pi0_rcs", "checkpoint_step": <checkpoint_step>}' # leave "{checkpoint_step}" it will be replaced, "model_name" is the key for the training config
 ```
 
+### RCS run commands
+```shell
+# openpi
+/home/juelg/miniconda3/envs/rcs_openpi/bin/python -m agents start-server openpi --port=20997 --host=0.0.0.0 --kwargs='{"checkpoint_path": "/mnt/dataset_drive/juelg/checkpoints/rcs_paper/pi0/pi0_rcs_utn/openpi_utn_wrist/{checkpoint_step}", "model_name": "pi0_rcs_utn", "checkpoint_step": 29999}' # leave "{checkpoint_step}" it will be replaced, "model_name" is the key for the training config
+```
+
+
 There is also the `run-eval-during-training` command to evaluate a model during training, so a single checkpoint.
 The `run-eval-post-training` command evaluates a range of checkpoints in parallel.
 In both cases environment and arguments as well as policy and arguments and wandb config for logging can be passed as CLI arguments.

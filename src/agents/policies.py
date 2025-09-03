@@ -1,3 +1,4 @@
+import base64
 import copy
 import json
 import logging
@@ -9,9 +10,12 @@ from multiprocessing import resource_tracker, shared_memory
 from operator import getitem
 from pathlib import Path
 from typing import Any, Union
+from torchvision.io import decode_jpeg
+from torchvision.transforms import v2
 
 import numpy as np
 from PIL import Image
+import torch
 
 
 @dataclass(kw_only=True)
@@ -140,6 +144,9 @@ class OpenPiModel(Agent):
         self.openpi_path = self.checkpoint_path.format(checkpoint_step=self.checkpoint_step)
 
         self.cfg = config.get_config(model_name)
+        self.chunks = 20
+        self.s = self.chunks
+        self.a = None
 
     def initialize(self):
         from openpi.policies import policy_config
@@ -153,16 +160,47 @@ class OpenPiModel(Agent):
     def act(self, obs: Obs) -> Act:
         # Run inference on a dummy example.
         # observation = {f"observation/{k}": v for k, v in obs.cameras.items()}
+
+        if self.s < self.chunks:
+            self.s += 1
+            return Act(action=self.a[self.s])
+        
+        else:
+            self.s = 0
+
+        side = base64.urlsafe_b64decode(obs.cameras["rgb_side"])
+        side = torch.frombuffer(bytearray(side), dtype=torch.uint8)
+        side = decode_jpeg(side)
+        side = v2.Resize((256, 256))(side)
+
+        wrist = base64.urlsafe_b64decode(obs.cameras["rgb_wrist"])
+        wrist = torch.frombuffer(bytearray(wrist), dtype=torch.uint8)
+        wrist = decode_jpeg(wrist)
+        wrist = v2.Resize((256, 256))(wrist)
+        
+        
+
+
+        # side = np.copy(obs.cameras["rgb_side"]).transpose(2, 0, 1)
+        # wrist = np.copy(obs.cameras["rgb_side"]).transpose(2, 0, 1)
+        # return Act(action=np.array([]))
         observation = {}
         observation.update(
             {
-                "observation/image": np.copy(obs.cameras["rgb_side"]).transpose(2, 0, 1),
-                "observation/state": np.concatenate([obs.info["joints"], [obs.gripper]]),
+                "observation/image": side,
+                "observation/wrist_image": wrist,
+                "observation/state": np.concatenate([obs.info["joints"], [1-obs.gripper]]),
                 "prompt": self.instruction,
             }
         )
         action_chunk = self.policy.infer(observation)["actions"]
+        # convert gripper action
+        action_chunk[:,-1] = 1 - action_chunk[:,-1]
+        self.a = action_chunk
+
+        # return Act(action=action_chunk[0])
         return Act(action=action_chunk[0])
+
 
 
 class OpenVLAModel(Agent):
